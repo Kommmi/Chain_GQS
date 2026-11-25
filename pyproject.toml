@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chain_gqs"
+version = "0.1.0"
+description = "Projected ensembles (geometric quantum states) of spinless electrons on a 1D Coulomb chain"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "matplotlib"]
+
+[project.optional-dependencies]
+quantum = ["qiskit>=2,<3"]
+tables = ["pandas"]
+dev = ["pytest", "pandas", "qiskit>=2,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
