@@ -13,4 +13,6 @@ from .spectrum import Spectrum, energy_bounds, exact_spectrum
 from .states import product_state, random_sector_state, state_from_label
 from .tomography import ideal_counts, reconstruct_from_counts, require_pure_reconstruction
 
+from .display import get_display_style, set_display_style
+
 __version__ = "0.1.0"

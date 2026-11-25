@@ -122,8 +122,46 @@ class ProjectedEnsemble:
         """``[P(N_S=0), P(N_S=1), ...]`` as an array (simplex coordinates)."""
         return np.array([self.sector_weights[n] for n in sorted(self.sector_weights)])
 
+    def dimer_observables(self) -> dict:
+        """Conditional dimer observables of the one-electron members.
+
+        For subsystem sites ``(s0, s1)`` and
+        ``|chi> = cos(theta/2)|01> + e^{i phi} sin(theta/2)|10>``:
+
+        * ``imbalance``   = <n_s0 - n_s1>                  = -cos(theta)
+        * ``bond_order``  = <c_s0^dag c_s1 + h.c.>         =  sin(theta) cos(phi)
+        * ``bond_current``= particle current s0 -> s1 in units of the hopping J,
+          j/J = -<i(c_s0^dag c_s1 - h.c.)>                 = -sin(theta) sin(phi)
+          (from dn_s1/dt for H = -J(c_s0^dag c_s1 + h.c.)).
+
+        These are the Bloch coordinates ``(x, y, z) = (bond_order, -bond_current, -imbalance)``.
+        Their ``weights``-weighted sums equal the ordinary expectation values in
+        the full state, because the empty and doubly occupied dimer contribute zero.
+        Requires a two-site subsystem of neighbouring sites (otherwise there is no bond).
+        """
+        if len(self.subsystem) != 2 or abs(self.subsystem[0] - self.subsystem[1]) != 1:
+            raise ValueError("dimer observables need a subsystem of two neighbouring sites")
+        th, ph = self.theta, self.phi
+        return dict(env=list(self.environment), weight=self.weights,
+                    imbalance=-np.cos(th),
+                    bond_order=np.sin(th) * np.cos(ph),
+                    bond_current=-np.sin(th) * np.sin(ph))
+
+    def sector_table(self, style: Optional[str] = None):
+        """Charge distribution on the subsystem; ``style`` is ``'pe'`` or ``'cm'``.
+        See :mod:`chain_gqs.display`."""
+        from .display import sector_table
+        return sector_table(self, style)
+
+    def ensemble_table(self, style: Optional[str] = None, include_fixed: Optional[bool] = None):
+        """Conditional subsystem states; ``style`` is ``'pe'`` or ``'cm'``.
+        See :mod:`chain_gqs.display`."""
+        from .display import ensemble_table
+        return ensemble_table(self, style, include_fixed)
+
     def table(self):
-        """Rows as a ``pandas.DataFrame`` (requires pandas)."""
+        """Raw rows as a ``pandas.DataFrame`` (requires pandas). For reading,
+        prefer :meth:`sector_table` and :meth:`ensemble_table`."""
         import pandas as pd
         cols = [c for c in ("env", "weight", "n_system", "theta", "phi", "phi_defined")
                 if c in (self.ensemble[0] if self.ensemble else {})]

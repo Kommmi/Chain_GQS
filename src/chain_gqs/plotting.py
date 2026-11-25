@@ -12,21 +12,46 @@ def _default_cmap():
     return LinearSegmentedColormap.from_list("pink_red", DEFAULT_CMAP_COLORS)
 
 
-def _angle_axes(ax):
-    ax.set(xlim=(0, 2 * np.pi), ylim=(0, np.pi), xlabel=r"$\phi$", ylabel=r"$\theta$")
-    ax.set_xticks([0, np.pi, 2 * np.pi], ["0", r"$\pi$", r"$2\pi$"])
+def _sites(item, sites=None):
+    """Subsystem sites for labels: explicit, else from the ensemble, else (0, 1)."""
+    if sites is not None:
+        return tuple(sites)
+    sub = getattr(item, "subsystem", None)
+    if sub is None and isinstance(item, dict):
+        sub = item.get("subsystem")
+    return tuple(sub) if sub is not None and len(sub) == 2 else (0, 1)
+
+
+def _angle_axes(ax, sites=(0, 1)):
+    """theta-phi axes labelled in both languages.
+
+    Left axis: theta. Right axis: charge imbalance <n_a - n_b> = -cos(theta).
+    Bottom: phi, with 0 = bonding and pi = antibonding (equator, hopping -J < 0).
+    """
+    a, b = sites
+    ax.set(xlim=(0, 2 * np.pi), ylim=(0, np.pi),
+           xlabel=r"$\phi$  (relative phase across the bond)",
+           ylabel=r"$\theta$")
+    ax.set_xticks([0, np.pi / 2, np.pi, 3 * np.pi / 2, 2 * np.pi],
+                  ["0\nbonding", r"$\pi/2$", "$\\pi$\nantibonding", r"$3\pi/2$", r"$2\pi$"])
     ax.set_yticks([0, np.pi / 2, np.pi], ["0", r"$\pi/2$", r"$\pi$"])
+    sec = ax.secondary_yaxis(
+        "right", functions=(lambda t: -np.cos(t), lambda y: np.arccos(-np.clip(y, -1, 1))))
+    sec.set_ticks([-1, 0, 1], [f"−1\n(on site {b})", "0", f"+1\n(on site {a})"])
+    sec.set_ylabel(rf"charge imbalance $\langle n_{a} - n_{b}\rangle$")
+    return sec
 
 
-def plot_gqs(gqs, ax=None, cmap="Reds", s=100):
-    """Scatter ``phi`` vs ``theta`` of one ensemble; colour = unconditional weight."""
+def plot_gqs(gqs, ax=None, cmap="Reds", s=100, sites=None):
+    """Scatter ``phi`` vs ``theta`` of one ensemble; colour = unconditional weight.
+    Axes carry both the angle and the charge-imbalance / bonding labels."""
     import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(figsize=(6, 4))
     pts = ax.scatter(gqs["phi"], gqs["theta"], c=gqs["weights"], s=s, cmap=cmap,
                      vmin=0, vmax=1, edgecolors="black")
-    _angle_axes(ax)
-    ax.figure.colorbar(pts, ax=ax, label=r"$\lambda_\alpha$")
+    _angle_axes(ax, _sites(gqs, sites))
+    ax.figure.colorbar(pts, ax=ax, pad=0.15, label=r"probability $\lambda_a$")
     return ax
 
 
@@ -60,15 +85,26 @@ def _snapshot(item, sector_history_row=None):
     return np.asarray(points).reshape(-1, 3), probs / probs.sum()
 
 
-def draw_bloch_sphere(ax, labels=(r"$|01\rangle$", r"$|10\rangle$")):
+def draw_bloch_sphere(ax, sites=(0, 1)):
+    """Bloch sphere of the one-electron dimer, labelled in both languages.
+
+    x = bond order <c_a^dag c_b + h.c.>, y = -j_(a->b)/J (bond current),
+    z = cos(theta) = <n_b - n_a> (north pole: electron on site b).
+    """
+    a, b = sites
     u, v = np.meshgrid(np.linspace(0, 2 * np.pi, 25), np.linspace(0, np.pi, 13))
     ax.plot_wireframe(np.sin(v) * np.cos(u), np.sin(v) * np.sin(u), np.cos(v),
                       color="0.75", alpha=0.25, linewidth=0.5)
-    ax.set(xlim=(-1.15, 1.15), ylim=(-1.15, 1.15), zlim=(-1.15, 1.15),
-           xlabel="x", ylabel="y", zlabel="z")
+    ax.set(xlim=(-1.15, 1.15), ylim=(-1.15, 1.15), zlim=(-1.15, 1.15))
+    ax.set_xlabel(f"x: bond order", labelpad=2)
+    ax.set_ylabel(rf"y: $-j_{{{a}\to{b}}}/J$ (current)", labelpad=2)
+    ax.set_zlabel(rf"z = cos$\theta$ = $\langle n_{b}-n_{a}\rangle$", labelpad=2)
+    ax.set_xticks([-1, 0, 1]); ax.set_yticks([-1, 0, 1]); ax.set_zticks([-1, 0, 1])
     ax.set_box_aspect((1, 1, 1))
-    ax.text(0, 0, 1.12, labels[0], ha="center")
-    ax.text(0, 0, -1.17, labels[1], ha="center")
+    ax.text(0, 0, 1.15, rf"$|01\rangle$: electron on site {b}", ha="center", fontsize=8)
+    ax.text(0, 0, -1.3, rf"$|10\rangle$: electron on site {a}", ha="center", fontsize=8)
+    ax.text(1.25, 0, 0, "bonding", ha="center", fontsize=8)
+    ax.text(-1.3, 0, 0, "antibonding", ha="center", fontsize=8)
     ax.grid(False)
 
 
@@ -76,10 +112,11 @@ def draw_sector_simplex(ax):
     vertices = np.array([[0, 0], [0.5, np.sqrt(3) / 2], [1, 0]])
     outline = vertices[[0, 1, 2, 0]]
     ax.plot(outline[:, 0], outline[:, 1], color="0.4", lw=1)
-    ax.text(0, -0.045, r"$|00\rangle$", ha="center", va="top")
-    ax.text(1, -0.045, r"$|11\rangle$", ha="center", va="top")
-    ax.text(0.5, np.sqrt(3) / 2 + 0.04, "One-electron sector\n(Bloch sphere)", ha="center", va="bottom")
-    ax.set(xlim=(-0.12, 1.12), ylim=(-0.13, 1.10), title="Sector probabilities")
+    ax.text(0, -0.045, "$|00\\rangle$\nempty dimer\n($n_S=0$)", ha="center", va="top", fontsize=9)
+    ax.text(1, -0.045, "$|11\\rangle$\ndoubly occupied\n($n_S=2$)", ha="center", va="top", fontsize=9)
+    ax.text(0.5, np.sqrt(3) / 2 + 0.04, "one electron on dimer ($n_S=1$)\n(Bloch sphere)",
+            ha="center", va="bottom", fontsize=9)
+    ax.set(xlim=(-0.15, 1.15), ylim=(-0.25, 1.12), title="Charge on the dimer (sector probabilities)")
     ax.set_aspect("equal")
     ax.axis("off")
     return vertices
@@ -88,7 +125,7 @@ def draw_sector_simplex(ax):
 def plot_gqs_history(Q_S, kick=None, past_marker_size=30, current_marker_size=120,
                      past_alpha=0.2, vmin=0.0, vmax=1.0, show_colorbar=True,
                      bloch_view="sphere", sector_history=None, cmap=None,
-                     figsize=(12, 5), title=None):
+                     figsize=(12, 5), title=None, sites=None):
     """Conditional Bloch states (left) and sector-probability simplex (right).
 
     ``Q_S`` is a sequence of :class:`~chain_gqs.gqs.ProjectedEnsemble` objects,
@@ -120,11 +157,12 @@ def plot_gqs_history(Q_S, kick=None, past_marker_size=30, current_marker_size=12
     fig = plt.figure(figsize=figsize, layout="constrained")
     ax_b = fig.add_subplot(121, projection="3d" if bloch_view == "sphere" else None)
     ax_s = fig.add_subplot(122)
+    lab_sites = _sites(Q_S[0], sites)
     if bloch_view == "sphere":
-        draw_bloch_sphere(ax_b)
+        draw_bloch_sphere(ax_b, lab_sites)
     else:
-        _angle_axes(ax_b)
-    ax_b.set_title("One-electron conditional states")
+        _angle_axes(ax_b, lab_sites)
+    ax_b.set_title("Conditional dimer states (one electron on dimer)")
     vertices = draw_sector_simplex(ax_s)
 
     for n, (points, probs) in enumerate(snaps):
@@ -145,7 +183,8 @@ def plot_gqs_history(Q_S, kick=None, past_marker_size=30, current_marker_size=12
                      edgecolors=edge, linewidths=0.5, zorder=3 if current else 2)
     if show_colorbar:
         fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax_b, shrink=0.7,
-                     pad=0.03, label=r"$\lambda_\alpha$")
+                     pad=0.07 if bloch_view == "angles" else 0.12,
+                     label=r"probability $\lambda_a$")
     if title:
         fig.suptitle(title)
     return fig, (ax_b, ax_s)
@@ -158,8 +197,8 @@ def plot_sector_weights(times, Q_S, ax=None):
         _, ax = plt.subplots(figsize=(7, 3))
     P = np.array([[q["sector_weights"][n] for n in sorted(q["sector_weights"])] for q in Q_S])
     for n in range(P.shape[1]):
-        ax.plot(times, P[:, n], label=fr"$P(N_S={n})$")
-    ax.set(xlabel="t", ylabel="probability", ylim=(-0.02, 1.02))
+        ax.plot(times, P[:, n], label=fr"$P(n_S={n})$: {['empty', 'one electron', 'doubly occupied'][n] if P.shape[1] == 3 else ''}")
+    ax.set(xlabel=r"time $t$ (units of $1/J$)", ylabel="probability of charge on dimer", ylim=(-0.02, 1.02))
     ax.legend()
     return ax
 
