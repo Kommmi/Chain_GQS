@@ -148,9 +148,9 @@ def ensemble_table(ens, style: Optional[str] = None, include_fixed: Optional[boo
             cur = f"bond current j{_sub(s[0])}→{_sub(s[1])}/J"
             if one:
                 i = by_env[r["env"]]
-                row[imb] = round(float(obs["imbalance"][i]), decimals)
-                row[bo] = round(float(obs["bond_order"][i]), decimals)
-                row[cur] = round(float(obs["bond_current"][i]), decimals)
+                row[imb] = round(float(obs["imbalance"][i]), decimals) + 0.0
+                row[bo] = round(float(obs["bond_order"][i]), decimals) + 0.0
+                row[cur] = round(float(obs["bond_current"][i]), decimals) + 0.0
             else:
                 # Empty or doubly occupied dimer: all three are exactly zero.
                 row[imb] = row[bo] = row[cur] = 0.0

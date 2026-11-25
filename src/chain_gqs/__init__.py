@@ -9,7 +9,7 @@ from .gqs import (ProjectedEnsemble, bloch_angles, bloch_vector, check_ensemble,
                   number_distribution, projected_ensemble, reduced_density_matrix)
 from .model import ChainModel, coulomb_matrix, nearest_neighbor_matrix
 from .presets import PRESETS, core_potential, coulomb, screened_coulomb_matrix, townsend2021
-from .spectrum import Spectrum, energy_bounds, exact_spectrum
+from .spectrum import Spectrum, energy_bounds, exact_spectrum, spectrum_sweep
 from .states import product_state, random_sector_state, state_from_label
 from .tomography import ideal_counts, reconstruct_from_counts, require_pure_reconstruction
 

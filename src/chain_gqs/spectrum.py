@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional, Sequence
 
 import numpy as np
 
+from .basis import occupations
 from .model import ChainModel
 
 
@@ -14,6 +16,7 @@ class Spectrum:
     vectors: np.ndarray         # columns are eigenvectors in sector basis, shape (d, d)
     labels: list                # site-order configuration labels of the sector basis
     sector: np.ndarray          # basis integers of the sector
+    L: Optional[int] = None     # chain length (set by exact_spectrum)
 
     def full_vector(self, k: int, L: int) -> np.ndarray:
         """Eigenvector ``k`` embedded in the full ``2**L`` space."""
@@ -24,21 +27,63 @@ class Spectrum:
     def degenerate_with(self, k: int, atol: float = 1e-8) -> np.ndarray:
         return np.isclose(self.energies, self.energies[k], atol=atol, rtol=0)
 
-    def table(self):
-        import pandas as pd
-        return pd.DataFrame({"level": range(len(self.energies)), "energy": self.energies})
+    def degeneracies(self, atol: float = 1e-8) -> np.ndarray:
+        """Number of levels sharing each level's energy."""
+        return np.array([int(self.degenerate_with(k, atol).sum()) for k in range(len(self.energies))])
 
-    def vectors_table(self):
+    def site_densities(self) -> np.ndarray:
+        """``<n_i>`` of every eigenstate, shape ``(levels, L)``."""
+        occ = np.array([occupations(x, self.L) for x in self.sector])   # (d, L)
+        return (np.abs(self.vectors) ** 2).T @ occ
+
+    def table(self, decimals: int = 6):
+        """Energies, excitation energies above the ground state, and degeneracies."""
         import pandas as pd
-        return pd.DataFrame(self.vectors, index=self.labels,
-                            columns=[f"E{k}" for k in range(len(self.energies))])
+        E = self.energies
+        return pd.DataFrame({"energy": np.round(E, decimals),
+                             "E - E0": np.round(E - E[0], decimals),
+                             "degeneracy": self.degeneracies()},
+                            index=pd.Index(range(len(E)), name="level"))
+
+    def vectors_table(self, decimals: int = 4):
+        """Eigenvector amplitudes: rows are configurations, columns are levels."""
+        import pandas as pd
+        vals = self.vectors.real if np.allclose(self.vectors.imag, 0) else self.vectors
+        df = pd.DataFrame(np.round(vals, decimals) + 0.0,   # + 0.0 turns -0.0 into 0.0
+                          index=pd.Index(self.labels, name="configuration"),
+                          columns=[f"E{k}" for k in range(len(self.energies))])
+        return df
+
+    def densities_table(self, decimals: int = 4):
+        """Site occupations ``<n_i>`` of each eigenstate."""
+        import pandas as pd
+        return pd.DataFrame(np.round(self.site_densities(), decimals),
+                            index=pd.Index(range(len(self.energies)), name="level"),
+                            columns=[f"<n{i}>" for i in range(self.L)])
 
 
 def exact_spectrum(model: ChainModel) -> Spectrum:
     """Diagonalize the ``N``-electron sector Hamiltonian."""
     H2 = model.sector_hamiltonian
     E, vec = np.linalg.eigh(H2)
-    return Spectrum(E, vec, model.sector_labels, model.sector)
+    # eigh returns each eigenvector with an arbitrary sign; fix it so the
+    # largest-magnitude component is positive, giving reproducible tables.
+    big = np.argmax(np.abs(vec), axis=0)
+    vec = vec * np.sign(vec[big, np.arange(vec.shape[1])])
+    return Spectrum(E, vec, model.sector_labels, model.sector, model.L)
+
+
+def spectrum_sweep(model: ChainModel, param: str, values: Sequence[float]) -> dict:
+    """Diagonalize ``model.with_(**{param: v})`` for each value.
+
+    Works for hand-built models (``param='V'``, ``'J'``, ...) and presets
+    (``param='lam_ee'`` for ``townsend2021``). Returns ``values``, ``energies``
+    (shape ``(len(values), d)``), ``gap`` (E1 - E0) and the ``spectra`` themselves.
+    """
+    values = np.asarray(values, float)
+    spectra = [exact_spectrum(model.with_(**{param: float(v)})) for v in values]
+    E = np.array([s.energies for s in spectra])
+    return dict(param=param, values=values, energies=E, gap=E[:, 1] - E[:, 0], spectra=spectra)
 
 
 def energy_bounds(model: ChainModel, margin_fraction: float = 0.05) -> tuple[float, float]:
